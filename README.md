@@ -59,6 +59,11 @@ liquifact-contracts/
 │   └── src/
 │       ├── lib.rs       # LiquiFact escrow contract (init, fund, settle)
 │       └── test.rs      # Unit tests
+├── docs/
+│   ├── openapi.yaml     # OpenAPI 3.1 specification
+│   ├── package.json     # Test runner deps (AJV, js-yaml)
+│   └── tests/
+│       └── openapi.test.js  # Schema conformance tests (51 cases)
 └── .github/workflows/
     └── ci.yml           # CI: fmt, build, test
 ```
@@ -69,6 +74,41 @@ liquifact-contracts/
 - **get_escrow** — Read current escrow state.
 - **fund** — Record investor funding; status becomes “funded” when target is met.
 - **settle** — Mark escrow as settled (buyer paid; investors receive principal + yield).
+
+---
+
+## API documentation (OpenAPI)
+
+The REST API surface is documented in [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3.1).
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/health` | — | Liveness probe |
+| `GET` | `/v1/info` | — | API name, version, network |
+| `GET` | `/v1/invoices` | JWT | List invoice summaries (paginated) |
+| `GET` | `/v1/invoices/{invoiceId}` | JWT | Full escrow detail for one invoice |
+| `POST` | `/v1/escrow` | JWT | Initialise a new invoice escrow |
+| `POST` | `/v1/escrow/{invoiceId}/fund` | JWT | Record investor funding |
+| `POST` | `/v1/escrow/{invoiceId}/settle` | JWT | Settle a funded escrow |
+
+### Security
+
+- All mutating and data endpoints require a `Bearer` JWT in the `Authorization` header.
+- `/health` and `/info` are public (no auth required).
+- Stellar addresses are validated as 56-char base32 (`[A-Z2-7]`) strings.
+- Monetary amounts are always in stroops (smallest unit); `amount ≥ 1` is enforced.
+- `yield_bps` is capped at `10000` (100 %) to prevent overflow.
+
+### Running the schema conformance tests
+
+```bash
+cd docs
+npm install
+npm test
+# tests 51 | pass 51 | fail 0
+```
 
 ---
 
