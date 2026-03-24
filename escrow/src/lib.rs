@@ -3,6 +3,14 @@
 //! Holds investor funds for an invoice until settlement.
 //! - SME receives stablecoin when funding target is met
 //! - Investors receive principal + yield when buyer pays at maturity
+//!
+//! # Maturity gate
+//!
+//! [`LiquifactEscrow::settle`] is protected by a ledger-timestamp check:
+//! `env.ledger().timestamp()` must be **≥ [`InvoiceEscrow::maturity`]** before
+//! settlement is allowed.  Because `env.ledger().timestamp()` is set by the
+//! Stellar network consensus and is not controllable by the contract caller,
+//! this provides a trustless time lock that prevents premature settlement.
 
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol};
 
@@ -21,7 +29,10 @@ pub struct InvoiceEscrow {
     pub funded_amount: i128,
     /// Yield basis points (e.g. 800 = 8%)
     pub yield_bps: i64,
-    /// Maturity timestamp (ledger time)
+    /// Maturity timestamp (Unix seconds, ledger time).
+    ///
+    /// Settlement is blocked until `env.ledger().timestamp() >= maturity`.
+    /// Set to `0` to disable the time lock (any ledger time is accepted).
     pub maturity: u64,
     /// Escrow status: 0 = open, 1 = funded, 2 = settled
     pub status: u32,
