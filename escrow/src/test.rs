@@ -100,8 +100,22 @@ fn test_double_init_panics() {
     let sme = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV001"), &sme, &1_000i128, &500i64, &2000u64);
-    client.init(&admin, &symbol_short!("INV001"), &sme, &1_000i128, &500i64, &2000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV001"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &2000u64,
+    );
+    client.init(
+        &admin,
+        &symbol_short!("INV001"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &2000u64,
+    );
 }
 
 #[test]
@@ -114,7 +128,14 @@ fn test_fund_after_funded_panics() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV002"), &sme, &1_000i128, &500i64, &2000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV002"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &2000u64,
+    );
     client.fund(&investor, &1_000i128);
     client.fund(&investor, &1i128); // must panic
 }
@@ -128,7 +149,14 @@ fn test_settle_before_funded_panics() {
     let sme = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV003"), &sme, &1_000i128, &500i64, &2000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV003"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &2000u64,
+    );
     client.settle();
 }
 
@@ -195,7 +223,14 @@ fn test_fund_partial_emits_event_status_open() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV003"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV003"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
     client.fund(&investor, &4_000_0000000i128);
 
     assert_eq!(env.events().all().events().len(), 1);
@@ -218,7 +253,14 @@ fn test_fund_full_emits_event_status_funded() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV004"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV004"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
     client.fund(&investor, &10_000_0000000i128);
 
     let payload: FundEvent = event_data(&env, 0);
@@ -237,7 +279,14 @@ fn test_settle_emits_event() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV005"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV005"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
     client.fund(&investor, &10_000_0000000i128);
     client.settle();
 
@@ -260,7 +309,14 @@ fn test_event_topics_are_correct() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV006"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV006"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
     assert_eq!(event_topic0(&env, 0), symbol_short!("init"));
 
     client.fund(&investor, &10_000_0000000i128);
@@ -283,7 +339,14 @@ fn test_two_partial_funds_emit_two_events() {
     let investor = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV007"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV007"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
 
     client.fund(&investor, &3_000_0000000i128);
     assert_eq!(env.events().all().events().len(), 1);
@@ -308,6 +371,13 @@ fn test_settle_before_funded_no_event() {
     let sme = Address::generate(&env);
     let (client, _) = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV008"), &sme, &10_000_0000000i128, &800i64, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV008"),
+        &sme,
+        &10_000_0000000i128,
+        &800i64,
+        &1000u64,
+    );
     client.settle();
 }
