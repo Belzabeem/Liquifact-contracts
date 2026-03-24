@@ -21,7 +21,9 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, vec, Addre
 pub struct InvoiceEscrow {
     /// Unique invoice identifier (e.g. INV-1023)
     pub invoice_id: Symbol,
-    /// SME wallet that receives liquidity
+    /// Admin address that initialized this escrow
+    pub admin: Address,
+    /// SME wallet that receives liquidity and authorizes settlement
     pub sme_address: Address,
     /// Total amount in smallest unit (e.g. stroops for XLM)
     pub amount: i128,
@@ -84,14 +86,25 @@ impl LiquifactEscrow {
     /// payload [`InitEvent`].
     pub fn init(
         env: Env,
+        admin: Address,
         invoice_id: Symbol,
         sme_address: Address,
         amount: i128,
         yield_bps: i64,
         maturity: u64,
     ) -> InvoiceEscrow {
+        // Auth boundary: only the admin may initialize the escrow.
+        admin.require_auth();
+
+        // Prevent re-initialization — escrow must not already exist.
+        assert!(
+            !env.storage().instance().has(&symbol_short!("escrow")),
+            "Escrow already initialized"
+        );
+
         let escrow = InvoiceEscrow {
             invoice_id: invoice_id.clone(),
+            admin: admin.clone(),
             sme_address: sme_address.clone(),
             amount,
             funding_target: amount,
@@ -159,6 +172,10 @@ impl LiquifactEscrow {
     /// payload [`SettleEvent`].
     pub fn settle(env: Env) -> InvoiceEscrow {
         let mut escrow = Self::get_escrow(env.clone());
+
+        // Auth boundary: only the SME (payee) may settle the escrow.
+        escrow.sme_address.require_auth();
+
         assert!(
             escrow.status == 1,
             "Escrow must be funded before settlement"
