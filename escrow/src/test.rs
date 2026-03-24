@@ -202,7 +202,10 @@ fn test_cost_baseline_fund_partial() {
 
     let cost = CostMeasurement::capture(&env, "fund (partial)");
 
-    assert!(cost.instructions > 0, "fund partial: instructions must be > 0");
+    assert!(
+        cost.instructions > 0,
+        "fund partial: instructions must be > 0"
+    );
     assert!(cost.mem_bytes > 0, "fund partial: mem_bytes must be > 0");
 
     // Regression guards — 3× observed baseline (~60k instructions, ~9.7k mem).
