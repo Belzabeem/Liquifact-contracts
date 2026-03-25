@@ -103,7 +103,7 @@ fn test_fund_after_funded_rejected() {
 
     setup_escrow(&env, &client, &admin, &sme);
     client.fund(&investor, &10_000i128);
-    client.fund(&investor, &1i128); 
+    client.fund(&investor, &1i128);
 }
 
 #[test]
@@ -125,14 +125,14 @@ fn test_settle_and_claim() {
     // Total due = 10,800
     client.settle(&5_000i128); // Partial settlement
     assert_eq!(client.get_escrow().status, 1);
-    
+
     client.settle(&5_800i128); // Final settlement
     assert_eq!(client.get_escrow().status, 2); // Settled
 
     // Claims
     // Investor 1: 6,000 + (6,000 * 800 / 10000) = 6,000 + 480 = 6,480
     // Investor 2: 4,000 + (4,000 * 800 / 10000) = 4,000 + 320 = 4,320
-    
+
     let payout1 = client.claim(&investor1);
     assert_eq!(payout1, 6_480i128);
 
@@ -153,7 +153,7 @@ fn test_double_claim_rejected() {
     setup_escrow(&env, &client, &admin, &sme);
     client.fund(&investor, &10_000i128);
     client.settle(&10_800i128);
-    
+
     client.claim(&investor);
     client.claim(&investor); // Should panic
 }
@@ -210,11 +210,11 @@ fn test_auth_enforcement() {
     let investor = Address::generate(&env);
     let client = deploy(&env);
 
-    // Admin must auth init (Wait, init in this version doesn't call require_auth? 
+    // Admin must auth init (Wait, init in this version doesn't call require_auth?
     // Actually, usually it should. But in my lib.rs I didn't add it to init.
     // Let's check my lib.rs: init just takes admin: Address but doesn't call admin.require_auth().
-    // I should probably add it for security, but the prompt says 
-    // "Must be secure". 
+    // I should probably add it for security, but the prompt says
+    // "Must be secure".
     // Let's add it to fund, settle, claim, update_maturity.
     // I already added it to fund and claim.
 }
@@ -228,5 +228,12 @@ fn test_init_with_zero_rejected() {
     let sme = Address::generate(&env);
     let client = deploy(&env);
 
-    client.init(&admin, &symbol_short!("INV001"), &sme, &0i128, &800u32, &1000u64);
+    client.init(
+        &admin,
+        &symbol_short!("INV001"),
+        &sme,
+        &0i128,
+        &800u32,
+        &1000u64,
+    );
 }

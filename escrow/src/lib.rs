@@ -144,7 +144,9 @@ impl LiquifactEscrow {
         };
 
         env.storage().instance().set(&DataKey::Escrow, &escrow);
-        env.storage().instance().set(&DataKey::Version, &SCHEMA_VERSION);
+        env.storage()
+            .instance()
+            .set(&DataKey::Version, &SCHEMA_VERSION);
 
         EscrowInitialized {
             name: symbol_short!("init"),
@@ -165,10 +167,7 @@ impl LiquifactEscrow {
 
     /// Returns the stored schema version.
     pub fn get_version(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::Version)
-            .unwrap_or(0)
+        env.storage().instance().get(&DataKey::Version).unwrap_or(0)
     }
 
     /// Record investor funding.
@@ -188,7 +187,9 @@ impl LiquifactEscrow {
         // Update individual contribution
         let key = DataKey::Contributions(investor.clone());
         let current_contribution: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(current_contribution + amount));
+        env.storage()
+            .persistent()
+            .set(&key, &(current_contribution + amount));
 
         env.storage().instance().set(&DataKey::Escrow, &escrow);
 
@@ -218,7 +219,10 @@ impl LiquifactEscrow {
         let mut escrow = Self::get_escrow(env.clone());
         escrow.sme_address.require_auth();
 
-        assert!(escrow.status == 1 || escrow.status == 2, "Escrow must be funded");
+        assert!(
+            escrow.status == 1 || escrow.status == 2,
+            "Escrow must be funded"
+        );
         assert!(amount > 0, "Settlement amount must be positive");
 
         let interest = (escrow.amount * (escrow.yield_bps as i128)) / 10000;
@@ -267,12 +271,19 @@ impl LiquifactEscrow {
         assert!(escrow.status == 2, "Escrow must be fully settled to claim");
 
         let contribution_key = DataKey::Contributions(investor.clone());
-        let principal = env.storage().persistent().get(&contribution_key).unwrap_or(0);
+        let principal = env
+            .storage()
+            .persistent()
+            .get(&contribution_key)
+            .unwrap_or(0);
         assert!(principal > 0, "No contribution found to claim");
 
         // Check if already claimed
         let claimed_key = DataKey::Claimed(investor.clone());
-        assert!(!env.storage().persistent().has(&claimed_key), "Already claimed");
+        assert!(
+            !env.storage().persistent().has(&claimed_key),
+            "Already claimed"
+        );
 
         // Payout = principal + (principal * yield_bps / 10000)
         let interest = (principal * (escrow.yield_bps as i128)) / 10000;
@@ -297,7 +308,10 @@ impl LiquifactEscrow {
         let mut escrow = Self::get_escrow(env.clone());
         escrow.admin.require_auth();
 
-        assert!(escrow.status == 0, "Maturity can only be updated in Open state");
+        assert!(
+            escrow.status == 0,
+            "Maturity can only be updated in Open state"
+        );
 
         let old_maturity = escrow.maturity;
         escrow.maturity = new_maturity;
@@ -319,7 +333,7 @@ impl LiquifactEscrow {
         let stored: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
         assert!(stored == from_version, "from_version mismatch");
         assert!(from_version < SCHEMA_VERSION, "Already up to date");
-        
+
         // No migrations yet
         panic!("No migration path");
     }
