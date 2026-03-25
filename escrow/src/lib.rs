@@ -212,6 +212,11 @@ impl LiquifactEscrow {
 
     /// Initialize a new invoice escrow.
     ///
+    /// `metadata_hash` must be the SHA-256 digest of the canonical off-chain invoice
+    /// document (e.g. `SHA-256(invoice_json_utf8_bytes)`). It is stored immutably
+    /// and can later be used by any party to verify that the document has not been
+    /// tampered with since escrow creation.
+    ///
     /// # Authorization
     /// Requires authorization from `admin`. This prevents any unauthorized
     /// party from creating or overwriting escrow state.

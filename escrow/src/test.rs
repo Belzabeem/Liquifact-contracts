@@ -217,6 +217,7 @@ fn test_init_and_get_escrow() {
         &10_000_0000000i128,
         &800i64,
         &1000u64,
+        &test_hash(&env),
     );
     assert_eq!(escrow.invoice_id, symbol_short!("INV001"));
     assert_eq!(escrow.admin, admin);
@@ -241,6 +242,7 @@ fn test_init_with_zero_fails() {
     let got = client.get_escrow();
     assert_eq!(got.invoice_id, escrow.invoice_id);
     assert_eq!(got.admin, admin);
+    assert_eq!(got.metadata_hash, test_hash(&env));
 }
 
 /// `init` must emit exactly one `EscrowInitialized` event whose payload
@@ -282,6 +284,7 @@ fn test_fund_with_zero_fails() {
         &10_000_0000000i128,
         &800i64,
         &1000u64,
+        &test_hash(&env),
     );
 
     let e1 = client.fund(&investor, &10_000_0000000i128);
@@ -308,6 +311,7 @@ fn test_partial_fund_stays_open() {
         &10_000_0000000i128,
         &800i64,
         &1000u64,
+        &test_hash(&env),
     );
 
     let partial = client.fund(&investor, &5_000_0000000i128);
@@ -372,6 +376,7 @@ fn test_fund_records_investor_auth() {
         &1_000i128,
         &500i64,
         &2000u64,
+        &test_hash(&env),
     );
     client.fund(&investor, &1_000i128);
 
@@ -397,6 +402,7 @@ fn test_settle_records_sme_auth() {
         &1_000i128,
         &500i64,
         &2000u64,
+        &test_hash(&env),
     );
     client.fund(&investor, &1_000i128);
     client.settle();
@@ -759,6 +765,7 @@ fn test_over_settlement_failure() {
         &10_000_0000000i128,
         &800i64,
         &2000u64,
+        &test_hash(&env),
     );
 
     // Fund exactly the target in one shot
@@ -1043,6 +1050,7 @@ fn test_cost_baseline_fund_partial() {
         &10_000_0000000i128,
         &800i64,
         &1000u64,
+        &test_hash(&env),
     );
     client.fund(&investor, &1_000_0000000i128);
 }
@@ -1091,6 +1099,7 @@ fn test_cost_baseline_settle() {
         &10_000_0000000i128,
         &800i64,
         &1000u64,
+        &test_hash(&env),
     );
     client.fund(&investor, &10_000_0000000i128);
     env.ledger().set_timestamp(1001);
