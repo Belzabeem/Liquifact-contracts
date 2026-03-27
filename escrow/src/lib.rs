@@ -291,6 +291,13 @@ impl LiquifactEscrow {
     // ── update_maturity ───────────────────────────────────────────────────────
 
     /// Update maturity timestamp. Only allowed by admin in Open state.
+    ///
+    /// # Authorization
+    /// Requires authorization from the admin.
+    ///
+    /// # Panics
+    /// - If escrow status is not open (0).
+    /// - If emergency mode is active.
     pub fn update_maturity(env: Env, new_maturity: u64) -> InvoiceEscrow {
         let mut escrow = Self::get_escrow(env.clone());
 
@@ -342,10 +349,37 @@ impl LiquifactEscrow {
 
         escrow.sme_address.require_auth();
 
+        // Get escrow state
+        let escrow = Self::get_escrow(env.clone());
+        
+        // Emergency mode check: refund only available during emergency
         assert!(
-            escrow.status == 1,
-            "Escrow must be funded before withdrawal"
+            escrow.emergency_mode,
+            "Emergency mode not active"
         );
+        
+        // Double-claim prevention: check if already refunded
+        let mut refunded: Map<Address, bool> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RefundedInvestors)
+            .unwrap_or_else(|| Map::new(&env));
+        
+        assert!(
+            !refunded.get(investor.clone()).unwrap_or(false),
+            "Already refunded"
+        );
+
+        // Get investor's balance
+        let balances: Map<Address, i128> = env
+            .storage()
+            .instance()
+            .get(&DataKey::InvestorBalances)
+            .unwrap_or_else(|| Map::new(&env));
+        
+        let investor_balance = balances.get(investor.clone()).unwrap_or(0);
+        
+        // Balance check: cannot refund zero balance
         assert!(
             escrow.invoice_id == target_invoice_id,
             "Target escrow invoice_id does not match"

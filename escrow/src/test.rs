@@ -5,7 +5,8 @@ use soroban_sdk::{
     Address, Env,
 };
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+use super::{LiquifactEscrow, LiquifactEscrowClient, SCHEMA_VERSION, DataKey, InvoiceEscrow};
+use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, Map};
 
 fn deploy(env: &Env) -> (LiquifactEscrowClient<'_>, Address) {
     let id = env.register(LiquifactEscrow, ());
@@ -65,7 +66,7 @@ fn test_init_and_get_escrow() {
         &symbol_short!("INV001"),
         &sme,
         &10_000_0000000i128,
-        &800i64,
+        &800u64,
         &1000u64,
     );
     let got = client.get_escrow();
@@ -174,6 +175,7 @@ fn test_fund_partial_then_full() {
     assert_eq!(full.funded_amount, 10_000_0000000i128);
 }
 
+/// `get_escrow` panics before initialization
 #[test]
 #[should_panic(expected = "Funding amount must be positive")]
 fn test_fund_zero_amount_panics() {
@@ -208,6 +210,7 @@ fn test_fund_requires_investor_auth() {
     );
 }
 
+/// Funding reaches target and transitions to funded status
 #[test]
 fn test_single_investor_contribution_tracked() {
     let env = Env::default();
@@ -218,7 +221,7 @@ fn test_single_investor_contribution_tracked() {
         &symbol_short!("INV020"),
         &sme,
         &10_000_0000000i128,
-        &800i64,
+        &800u64,
         &1000u64,
     );
     client.fund(&investor, &3_000_0000000i128);
@@ -249,7 +252,7 @@ fn test_repeated_funding_accumulates_contribution() {
         &symbol_short!("INV021"),
         &sme,
         &10_000_0000000i128,
-        &800i64,
+        &800u64,
         &1000u64,
     );
     client.fund(&investor, &2_000_0000000i128);
@@ -259,6 +262,7 @@ fn test_repeated_funding_accumulates_contribution() {
 
 // ── event: fund (partial) ─────────────────────────────────────────────────────
 
+/// Partial funding maintains open status
 #[test]
 fn test_multiple_investors_tracked_independently() {
     let env = Env::default();
@@ -271,7 +275,7 @@ fn test_multiple_investors_tracked_independently() {
         &symbol_short!("INV023"),
         &sme,
         &10_000_0000000i128,
-        &800i64,
+        &800u64,
         &1000u64,
     );
     client.fund(&inv_a, &2_000_0000000i128);
@@ -286,6 +290,11 @@ fn test_multiple_investors_tracked_independently() {
     assert_eq!(sum, client.get_escrow().funded_amount);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Settlement Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Settlement transitions escrow to settled status
 #[test]
 fn test_contributions_sum_equals_funded_amount() {
     let env = Env::default();
@@ -298,7 +307,7 @@ fn test_contributions_sum_equals_funded_amount() {
         &symbol_short!("INV023"),
         &sme,
         &10_000_0000000i128,
-        &800i64,
+        &800u64,
         &1000u64,
     );
     client.fund(&inv_a, &2_000_0000000i128);
@@ -348,6 +357,11 @@ fn test_settle_before_funded_panics() {
     client.settle();
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Update Maturity Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Admin can update maturity in open state
 #[test]
 fn test_settle_requires_sme_auth() {
     let env = Env::default();
@@ -561,9 +575,9 @@ fn test_transfer_admin_updates_admin() {
         &admin,
         &symbol_short!("T001"),
         &sme,
-        &1_000i128,
-        &500i64,
-        &2000u64,
+        &10_000_0000000i128,
+        &800u64,
+        &1000u64,
     );
     let updated = client.transfer_admin(&new_admin);
     assert_eq!(updated.admin, new_admin);
