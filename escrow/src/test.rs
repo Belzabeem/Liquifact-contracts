@@ -20,13 +20,13 @@ fn setup(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
     (client, admin, sme)
 }
 
-fn default_init(client: &LiquifactEscrowClient, admin: &Address, sme: &Address) {
+fn setup_escrow(_env: &Env, client: &LiquifactEscrowClient, admin: &Address, sme: &Address) {
     client.init(
         admin,
         &symbol_short!("INV001"),
         sme,
-        &10_000_0000000i128,
-        &800i64,
+        &10_000i128,
+        &800u32,
         &1000u64,
     );
 }
@@ -41,8 +41,8 @@ fn test_init_stores_escrow() {
         &admin,
         &symbol_short!("INV001"),
         &sme,
-        &10_000_0000000i128,
-        &800i64,
+        &10_000i128,
+        &800u32,
         &1000u64,
     );
     assert_eq!(escrow.invoice_id, symbol_short!("INV001"));

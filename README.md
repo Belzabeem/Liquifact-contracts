@@ -140,19 +140,6 @@ All payload types (`InitEvent`, `FundEvent`, `SettleEvent`) are exported `#[cont
 
 The `invoice_id` in the topic allows indexers to filter events by invoice without decoding the payload.
 
-The contract rejects `migrate` calls that:
-- Pass a `from_version` that does not match the stored version (prevents accidental double-migration).
-- Pass a `from_version >= SCHEMA_VERSION` (already up to date).
-
-### Security notes
-
-- **Re-initialization guard** — `init` panics if the escrow is already initialized, preventing state overwrite.
-- **`migrate` must be admin-gated in production** — the current implementation is open for testability. Before mainnet deployment, add `admin_address.require_auth()` at the top of `migrate` so only the contract deployer can trigger upgrades.
-- **No silent data loss** — migration arms must explicitly handle every field. Defaulting a field to zero/false is intentional and must be documented in the version history table above.
-- **Immutable history** — old migration arms should never be removed; they ensure any instance at any historical version can be brought forward step-by-step.
-
----
-
 ## Security & Authorization
 
 State-changing methods enforce Stellar auth using `require_auth()`:

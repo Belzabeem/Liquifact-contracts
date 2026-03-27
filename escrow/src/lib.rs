@@ -356,7 +356,8 @@ impl LiquifactEscrow {
         escrow.funded_amount = 0;
         env.storage().instance().set(&DataKey::Escrow, &escrow);
 
-        withdrawal_amount
+        // No migrations yet
+        panic!("No migration path");
     }
 
     // ── transfer_admin ────────────────────────────────────────────────────────
