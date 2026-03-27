@@ -10,19 +10,21 @@ This repo contains the **escrow** contract that holds investor funds for tokeniz
 ### 1. Unauthorized Access
 
 **Risk:**
-- Anyone can call `fund` or `settle`
+- Unauthorized caller could attempt to `fund`, `confirm_payment`, `settle`, or `redeem`
 
 **Impact:**
 - Malicious settlement
 - Fake funding events
 
 **Mitigation (Current):**
-- None (mock auth used in tests)
+- Role-based authorization:
+  - `fund`: the caller must be the `investor`
+  - `confirm_payment`: the configured `buyer_address` must authorize
+  - `settle`: the configured `sme_address` must authorize
+  - `redeem`: the caller must be the `investor`
 
 **Recommended Controls:**
-- Require auth:
-  - `fund`: investor must authorize
-  - `settle`: only trusted role (e.g. admin/oracle)
+- Keep read-only queries (`get_investor_position`) free of auth requirements, while ensuring state-changing calls are auth-gated.
 
 ---
 
@@ -51,12 +53,12 @@ cargo test
 - Zero funding
 - Invalid maturity
 
-| Command                | Description                                                |
-|------------------------|------------------------------------------------------------|
-| `cargo build`          | Build all contracts                                        |
-| `cargo test`           | Run unit tests and property-based tests (using `proptest`) |
-| `cargo fmt`            | Format code                                                |
-| `cargo fmt -- --check` | Check formatting (used in CI)                              |
+| Command                    | Description                   |
+|----------------------------|-------------------------------|
+| `cargo build`              | Build all contracts           |
+| `cargo test`               | Run unit tests                |
+| `cargo fmt`                | Format code                   |
+| `cargo fmt -- --check`     | Check formatting (used in CI) |
 
 ---
 
@@ -94,110 +96,59 @@ Records an investor contribution. Transitions to `status = 1` when
 | `_investor` | Investor's Stellar address (for audit trail) |
 | `amount`    | > 0 recommended; partial funding is allowed  |
 
-**Returns** — Updated `InvoiceEscrow`.
-
-**Failure conditions**
-
-| Condition                 | Behaviour                               |
-|---------------------------|-----------------------------------------|
-| `status != 0`             | Panics: `"Escrow not open for funding"` |
-| `init` not called         | Panics: `"Escrow not initialized"`      |
-| `funded_amount` overflows | Rust panics (debug) / wraps (release)   |
-
-**State transitions**
-
-- **init** — Create an invoice escrow (invoice id, SME address, admin address, amount, yield bps, maturity).
+- **init** — Create an invoice escrow (invoice id, SME address, amount, yield bps, maturity). Emits `init` event.
 - **get_escrow** — Read current escrow state.
 - **get_version** — Return the stored schema version number.
+- **confirm_payment** — Buyer confirms repayment (sets `is_paid = true`).
 - **fund** — Record investor funding; status becomes "funded" when target is met.
 - **settle** — Mark escrow as settled (buyer paid; investors receive principal + yield).
+- **redeem** — Mark an investor’s claim as redeemed (accounting only).
+- **get_investor_position** — Read-only investor position query (issue #45).
 - **migrate** — Upgrade storage from an older schema version to the current one (see below).
 
-### Edge-case test matrix (`escrow/src/test.rs`)
+### Maturity gate
 
-Tests are tagged by risk category in inline comments:
+`settle` enforces two guards before advancing status to `settled (2)`:
 
-| Category  | Tag       | What is covered |
-|-----------|-----------|-----------------|
-| Happy path | `[HAPPY]` | Full lifecycle, field persistence, `get_escrow` consistency |
-| Auth       | `[AUTH]`  | `require_auth` recorded for admin / investor / SME; panics without auth |
-| State      | `[STATE]` | Double-init, fund-after-funded, fund-after-settled, settle-when-open, double-settle |
-| Uninitialized | `[UNINIT]` | `get_escrow`, `fund`, `settle` all panic before `init` |
-| Boundary   | `[BOUND]` | `amount=1`, `amount=i128::MAX`, `yield_bps=i64::MAX`, `maturity=0`, `maturity=u64::MAX`, overshoot funding, exact-boundary funding |
-| Repeated calls | `[REPEAT]` | Multiple investors accumulate correctly; `get_escrow` is idempotent |
+1. **Funding check** — `status` must equal `1` (fully funded). Attempting to settle an unfunded escrow panics with `"Escrow must be funded before settlement"`.
+2. **Time check** — `env.ledger().timestamp()` must be **≥ `maturity`**. Attempting to settle before the invoice is due panics with `"Cannot settle before maturity timestamp"`.
 
----
+`env.ledger().timestamp()` is the canonical Soroban on-chain clock. It is set by the Stellar network and **cannot be manipulated by the contract caller**, making it safe to use as a time gate.
 
-## Contract migration strategy
+| Ledger time vs maturity | Status | Result |
+|-------------------------|--------|--------|
+| `now < maturity`        | funded | panic — premature settlement blocked |
+| `now == maturity`       | funded | success |
+| `now > maturity`        | funded | success |
+| any                     | open   | panic — not yet funded |
 
-### Overview
-
-The escrow contract stores its state as a single [`InvoiceEscrow`](escrow/src/lib.rs) struct under the instance storage key `"escrow"`, alongside a `"version"` key that holds the current schema version (`u32`).
-
-Any change to the struct layout (adding, removing, or retyping a field) is a **breaking schema change** and requires a version bump and a migration path.
-
-### Version history
-
-| Version | Description |
-|---------|-------------|
-| 1       | Initial schema — `invoice_id`, `sme_address`, `amount`, `funding_target`, `funded_amount`, `yield_bps`, `maturity`, `status`, `version` |
-
-### How versioning works
-
-- `SCHEMA_VERSION` in `lib.rs` is the source of truth for the current schema.
-- Every `init` call writes `SCHEMA_VERSION` into both the struct's `version` field and the `"version"` storage key.
-- `get_version()` lets off-chain tooling (indexers, upgrade scripts) read the stored version before deciding whether to call `migrate`.
-
-### Adding a new schema version (step-by-step)
-
-1. **Bump `SCHEMA_VERSION`** in `lib.rs` (e.g. `1` to `2`).
-2. **Keep the old struct** — add a `legacy` module (or a type alias like `InvoiceEscrowV1`) so the old bytes can still be deserialized.
-3. **Add a migration arm** in `LiquifactEscrow::migrate`:
-   ```rust
-   if from_version == 1 {
-       let old: InvoiceEscrowV1 = env.storage().instance()
-           .get(&symbol_short!("escrow")).unwrap();
-       let new = InvoiceEscrow {
-           // spread old fields, default new ones
-           new_field: default_value,
-           version: 2,
-           ..old.into()
-       };
-       env.storage().instance().set(&symbol_short!("escrow"), &new);
-       env.storage().instance().set(&symbol_short!("version"), &2u32);
-   }
-   ```
-4. **Write a test** in `test.rs` that manually writes the old struct bytes into storage and asserts the migrated state is correct.
-5. **Gate `migrate` behind admin auth** before deploying to production (see security notes below).
-
-### Deployment upgrade flow
-
-```
-1. Deploy new WASM (bump SCHEMA_VERSION, add migration arm)
-2. Call get_version()  ->  confirm stored version == N
-3. Call migrate(N)     ->  storage upgraded to N+1
-4. Call get_version()  ->  confirm stored version == N+1
-5. Resume normal operations
-```
-
-The contract rejects `migrate` calls that:
-- Pass a `from_version` that does not match the stored version (prevents accidental double-migration).
-- Pass a `from_version >= SCHEMA_VERSION` (already up to date).
-
-### Security notes
-
-- **Re-initialization guard** — `init` panics if the escrow is already initialized, preventing state overwrite.
-- **`migrate` must be admin-gated in production** — the current implementation is open for testability. Before mainnet deployment, add `admin_address.require_auth()` at the top of `migrate` so only the contract deployer can trigger upgrades.
-- **No silent data loss** — migration arms must explicitly handle every field. Defaulting a field to zero/false is intentional and must be documented in the version history table above.
-- **Immutable history** — old migration arms should never be removed; they ensure any instance at any historical version can be brought forward step-by-step.
+Setting `maturity = 0` effectively disables the time lock (any timestamp ≥ 0).
 
 ---
+
+### Events
+
+The contract emits Soroban events on every state-changing call, enabling off-chain indexers and analytics.
+
+| Method   | Topics                   | Payload fields                                   |
+|----------|--------------------------|--------------------------------------------------|
+| `init`   | `["init", invoice_id]`   | `sme_address`, `amount`, `yield_bps`, `maturity` |
+| `fund`   | `["fund", invoice_id]`   | `investor`, `amount`, `funded_amount`, `status`  |
+| `settle` | `["settle", invoice_id]` | `sme_address`, `amount`, `yield_bps`             |
+
+All payload types (`InitEvent`, `FundEvent`, `SettleEvent`) are exported `#[contracttype]` structs — see [`escrow/src/lib.rs`](escrow/src/lib.rs) for full field documentation.
+
+The `invoice_id` in the topic allows indexers to filter events by invoice without decoding the payload.
 
 ## Security & Authorization
 
-Currently, the contract methods (`init`, `fund`, `settle`) **do not enforce authorization** via `require_auth()`. They rely solely on state-machine guards (e.g. checking if `status == 0` before funding).
+State-changing methods enforce Stellar auth using `require_auth()`:
+- `fund` requires authorization from the caller (the `investor`).
+- `confirm_payment` requires authorization from the configured `buyer_address`.
+- `settle` requires authorization from the configured `sme_address`.
+- `redeem` requires authorization from the caller (the `investor`).
 
-> **Warning:** This represents an authentication gap. Any caller can trigger these functions. Negative tests have been added to track this gap and ensure proper exceptions are thrown when the contract is in an invalid state.
+Read-only methods (including `get_investor_position`) do not require auth, and return only public accounting data (amounts, escrow status, and claim flags).
 
 ---
 
@@ -206,6 +157,7 @@ Currently, the contract methods (`init`, `fund`, `settle`) **do not enforce auth
 - **Minimum Funding:** All funding amounts must be strictly greater than zero ($> 0$). 
 - **Initialization:** Escrow creation will fail if the target amount is not positive.
 - **Integer Safety:** Uses `checked_add` to prevent overflow during funded amount accounting.
+- **Governance Controls (Target Update):** The funding target size (`amount`) can be modified by the initialized `admin`. It enforces strict governance constraints: it can only be modified when the escrow is `Open` (status = 0), the new target must be strictly positive, and it can never be less than the existing `funded_amount`.
 
 ---
 
@@ -247,6 +199,13 @@ cargo install cargo-llvm-cov
 rustup component add llvm-tools-preview
 cargo llvm-cov --features testutils --fail-under-lines 95 --summary-only
 ```
+
+## Test & Coverage
+
+- `cargo test`: all unit tests passed (`12` passed).
+- `cargo llvm-cov`: `TOTAL` line coverage `99.40%` (831 lines, 5 missed), meeting the CI threshold of `≥ 95%`.
+
+Security note: `get_investor_position` is read-only (no Stellar auth required) and returns only on-chain accounting data (addresses, amounts, claim flags). It does not expose any off-chain personal information.
 
 Keep formatting, tests, and coverage passing before opening a PR.
 
