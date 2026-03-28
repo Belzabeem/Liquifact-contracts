@@ -4,7 +4,12 @@
 //! - SME receives stablecoin when funding target is met
 //! - Investors receive principal + yield when buyer pays at maturity
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Map, Symbol};
+
+/// Product guardrail: a single escrow supports at most this many distinct
+/// investors so the per-investor contribution map stays well below Soroban's
+/// contract-data entry size limits.
+pub const MAX_INVESTORS_PER_ESCROW: u32 = 128;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,6 +28,12 @@ pub struct InvoiceEscrow {
     pub yield_bps: i64,
     /// Maturity timestamp (ledger time)
     pub maturity: u64,
+    /// Per-investor principal contributions for this invoice.
+    ///
+    /// This is intentionally bounded by `MAX_INVESTORS_PER_ESCROW` to prevent
+    /// denial-of-storage patterns where attackers create too many distinct
+    /// investor keys inside a single escrow instance.
+    pub investor_contributions: Map<Address, i128>,
     /// Escrow status: 0 = open, 1 = funded, 2 = settled
     pub status: u32,
 }
@@ -49,6 +60,7 @@ impl LiquifactEscrow {
             funded_amount: 0,
             yield_bps,
             maturity,
+            investor_contributions: Map::new(&env),
             status: 0, // open
         };
         env.storage()
@@ -65,11 +77,51 @@ impl LiquifactEscrow {
             .unwrap_or_else(|| panic!("Escrow not initialized"))
     }
 
+    /// Product limit for distinct investors supported by one escrow.
+    pub fn max_investors() -> u32 {
+        MAX_INVESTORS_PER_ESCROW
+    }
+
+    /// Number of distinct investors recorded for this escrow.
+    pub fn get_investor_count(env: Env) -> u32 {
+        Self::get_escrow(env).investor_contributions.len()
+    }
+
+    /// Amount funded by a specific investor.
+    pub fn get_investor_contribution(env: Env, investor: Address) -> i128 {
+        Self::get_escrow(env)
+            .investor_contributions
+            .get(investor)
+            .unwrap_or(0)
+    }
+
     /// Record investor funding. In production, this would be called with token transfer.
-    pub fn fund(env: Env, _investor: Address, amount: i128) -> InvoiceEscrow {
+    pub fn fund(env: Env, investor: Address, amount: i128) -> InvoiceEscrow {
         let mut escrow = Self::get_escrow(env.clone());
         assert!(escrow.status == 0, "Escrow not open for funding");
-        escrow.funded_amount += amount;
+        assert!(amount > 0, "Funding amount must be positive");
+
+        let previous_contribution = escrow
+            .investor_contributions
+            .get(investor.clone())
+            .unwrap_or(0);
+        if previous_contribution == 0 {
+            assert!(
+                escrow.investor_contributions.len() < MAX_INVESTORS_PER_ESCROW,
+                "Investor limit exceeded"
+            );
+        }
+
+        let updated_contribution = previous_contribution
+            .checked_add(amount)
+            .unwrap_or_else(|| panic!("Investor contribution overflow"));
+        escrow
+            .investor_contributions
+            .set(investor, updated_contribution);
+        escrow.funded_amount = escrow
+            .funded_amount
+            .checked_add(amount)
+            .unwrap_or_else(|| panic!("Escrow funding overflow"));
         if escrow.funded_amount >= escrow.funding_target {
             escrow.status = 1; // funded - ready to release to SME
         }

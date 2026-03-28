@@ -1,110 +1,87 @@
 # LiquiFact Contracts
 
-Soroban smart contracts for **LiquiFact** — the global invoice liquidity network on Stellar. This repo contains the **escrow** contract that holds investor funds for tokenized invoices until settlement.
-
-Part of the LiquiFact stack: **frontend** (Next.js) | **backend** (Express) | **contracts** (this repo).
-
----
+Soroban smart contracts for LiquiFact, the invoice liquidity network on Stellar. This repository currently contains the `escrow` contract that holds investor funds for tokenized invoices until settlement.
 
 ## Prerequisites
 
-- **Rust** 1.70+ (stable)
-- **Soroban CLI** (optional, for deployment): [Stellar Soroban docs](https://developers.stellar.org/docs/smart-contracts/getting-started/soroban-cli)
+- Rust 1.70+ (stable)
+- Soroban CLI (optional for deployment)
 
-For CI and local checks you only need Rust and `cargo`.
-
----
+For local development and CI, Rust is enough.
 
 ## Setup
 
-1. **Clone the repo**
-
-   ```bash
-   git clone <this-repo-url>
-   cd liquifact-contracts
-   ```
-
-2. **Build**
-
-   ```bash
-   cargo build
-   ```
-
-3. **Run tests**
-
-   ```bash
-   cargo test
-   ```
-
----
+```bash
+cargo build
+cargo test
+```
 
 ## Development
 
-| Command           | Description                    |
-|-------------------|--------------------------------|
-| `cargo build`     | Build all contracts            |
-| `cargo test`      | Run unit tests                 |
-| `cargo fmt`       | Format code                    |
-| `cargo fmt -- --check` | Check formatting (used in CI) |
-
----
+| Command | Description |
+|---|---|
+| `cargo build` | Build the workspace |
+| `cargo test` | Run unit tests |
+| `cargo fmt` | Format code |
+| `cargo fmt -- --check` | Check formatting |
 
 ## Project structure
 
-```
+```text
 liquifact-contracts/
-├── Cargo.toml           # Workspace definition
-├── escrow/
-│   ├── Cargo.toml       # Escrow contract crate
-│   └── src/
-│       ├── lib.rs       # LiquiFact escrow contract (init, fund, settle)
-│       └── test.rs      # Unit tests
-└── .github/workflows/
-    └── ci.yml           # CI: fmt, build, test
+|-- Cargo.toml
+|-- README.md
+`-- escrow/
+    |-- Cargo.toml
+    `-- src/
+        |-- lib.rs
+        `-- test.rs
 ```
 
-### Escrow contract (high level)
+## Escrow contract
 
-- **init** — Create an invoice escrow (invoice id, SME address, amount, yield bps, maturity).
-- **get_escrow** — Read current escrow state.
-- **fund** — Record investor funding; status becomes “funded” when target is met.
-- **settle** — Mark escrow as settled (buyer paid; investors receive principal + yield).
+- `init`: Create an invoice escrow.
+- `get_escrow`: Read the current escrow state.
+- `fund`: Record funding, track each investor's principal contribution, and mark the escrow funded once the target is reached.
+- `settle`: Mark a funded escrow as settled.
+- `get_investor_count`: Return the number of distinct investors recorded for the escrow.
+- `get_investor_contribution`: Return the principal amount recorded for one investor.
+- `max_investors`: Return the supported investor cap for one escrow.
 
----
+## Storage guardrails
 
-## CI/CD
+The escrow stores a per-investor contribution map inside the contract instance. That map is intentionally bounded.
 
-GitHub Actions runs on every push and pull request to `main`:
+- Supported investor cardinality: `128` distinct investors per escrow
+- Product assumption: invoices that need more than `128` backers should be split across multiple escrows or a higher-level allocation flow
+- Security goal: prevent denial-of-storage attacks that keep inserting new investor keys until a single contract-data entry becomes too large or too expensive to update
 
-- **Format** — `cargo fmt --all -- --check`
-- **Build** — `cargo build`
-- **Tests** — `cargo test`
+The regression tests in `escrow/src/test.rs` enforce these assumptions:
 
-Keep formatting and tests passing before opening a PR.
+- The `129th` distinct investor is rejected.
+- Re-funding an existing investor at the cap is still allowed.
+- At `128` investors, the serialized investor map and escrow entry must stay below documented byte thresholds.
+- The final insertion at the cap must stay within a bounded write footprint.
 
----
+These limits are designed to keep the contract well below Soroban's contract-data entry limits and to catch future schema changes that would bloat per-investor storage.
 
-## Contributing
+## Security notes
 
-1. **Fork** the repo and clone your fork.
-2. **Create a branch** from `main`: `git checkout -b feature/your-feature` or `fix/your-fix`.
-3. **Setup**: ensure Rust stable is installed; run `cargo build` and `cargo test`.
-4. **Make changes**:
-   - Follow existing patterns in `escrow/src/lib.rs`.
-   - Add or update tests in `escrow/src/test.rs`.
-   - Format with `cargo fmt`.
-5. **Verify locally**:
-   - `cargo fmt --all -- --check`
-   - `cargo build`
-   - `cargo test`
-6. **Commit** with clear messages (e.g. `feat(escrow): X`, `test(escrow): Y`).
-7. **Push** to your fork and open a **Pull Request** to `main`.
-8. Wait for CI and address review feedback.
+- Funding amounts must be positive.
+- Distinct investor growth is capped per escrow.
+- Funding totals and investor balances use checked addition to avoid overflow.
+- Storage-growth tests act as regression guards against accidental state bloat.
 
-We welcome new contracts (e.g. settlement, tokenization helpers), tests, and docs that align with LiquiFact’s invoice financing flow.
+## CI
 
----
+Run these before opening a PR:
+
+```bash
+cargo fmt --all -- --check
+cargo build
+cargo test
+```
 
 ## License
 
-MIT (see root LiquiFact project for full license).
+MIT
