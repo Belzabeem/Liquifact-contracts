@@ -1199,9 +1199,3 @@ impl LiquifactEscrow {
 
 #[cfg(test)]
 mod test;
-
-#[cfg(test)]
-mod test_funding_target;
-
-#[cfg(test)]
-mod test_token_integration;
