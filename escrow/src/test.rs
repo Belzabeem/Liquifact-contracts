@@ -2415,6 +2415,8 @@ fn test_high_variance_funding_sequence_invariants() {
         &None,
         &Address::generate(&env),
         &None,
+        &None,
+        &None,
     );
 
     let investors = [
@@ -2563,6 +2565,8 @@ proptest! {
             &Address::generate(&env),
             &None,
             &Address::generate(&env),
+            &None,
+            &None,
             &None,
         );
         prop_assert_eq!(escrow.status, 0);
