@@ -67,7 +67,7 @@
 
 use soroban_sdk::{
     contract, contractevent, contractimpl, contracttype, symbol_short, token::TokenClient, Address,
-    Env, String, Symbol, Vec,
+    BytesN, Env, String, Symbol, Vec,
 };
 
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Map, Symbol};
@@ -111,6 +111,18 @@ pub enum DataKey {
     InvestorEffectiveYield(Address),
     /// Minimum [`Env::ledger`] timestamp before [`LiquifactEscrow::claim_investor_payout`] (0 = no extra gate).
     InvestorClaimNotBefore(Address),
+    /// Minimum [`LiquifactEscrow::fund`] / [`LiquifactEscrow::fund_with_commitment`] amount per call (0 = no floor).
+    MinContributionFloor,
+    /// When set at [`LiquifactEscrow::init`], caps distinct investor addresses that may contribute (`prev == 0`).
+    MaxUniqueInvestorsCap,
+    /// Count of distinct investor addresses that have a non-zero [`DataKey::InvestorContribution`].
+    UniqueFunderCount,
+    /// Admin-only **single-set** off-chain attestation digest (e.g. SHA-256 of a legal/KYC bundle).
+    /// See [`LiquifactEscrow::bind_primary_attestation_hash`].
+    PrimaryAttestationHash,
+    /// Append-only audit chain of digests (bounded by [`MAX_ATTESTATION_APPEND_ENTRIES`]).
+    /// See [`LiquifactEscrow::append_attestation_digest`].
+    AttestationAppendLog,
 }
 
 // --- Data types ---
@@ -223,6 +235,23 @@ pub struct TreasuryDustSwept {
     pub invoice_id: Symbol,
     pub token: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+pub struct PrimaryAttestationBound {
+    #[topic]
+    pub name: Symbol,
+    pub invoice_id: Symbol,
+    pub digest: BytesN<32>,
+}
+
+#[contractevent]
+pub struct AttestationDigestAppended {
+    #[topic]
+    pub name: Symbol,
+    pub invoice_id: Symbol,
+    pub index: u32,
+    pub digest: BytesN<32>,
 }
 
 #[contract]
@@ -341,6 +370,8 @@ impl LiquifactEscrow {
         registry: Option<Address>,
         treasury: Address,
         yield_tiers: Option<Vec<YieldTier>>,
+        min_contribution: Option<i128>,
+        max_unique_investors: Option<u32>,
     ) -> InvoiceEscrow {
         admin.require_auth();
 
@@ -388,6 +419,35 @@ impl LiquifactEscrow {
                     .instance()
                     .set(&DataKey::YieldTierTable, tiers);
             }
+        }
+
+        let floor = min_contribution.unwrap_or(0);
+        if min_contribution.is_some() {
+            assert!(
+                floor > 0,
+                "min_contribution must be positive when configured"
+            );
+            assert!(
+                floor <= amount,
+                "min_contribution cannot exceed initial invoice amount / target hint"
+            );
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::MinContributionFloor, &floor);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::UniqueFunderCount, &0u32);
+
+        if let Some(cap) = max_unique_investors {
+            assert!(
+                cap > 0,
+                "max_unique_investors must be positive when configured"
+            );
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxUniqueInvestorsCap, &cap);
         }
 
         EscrowInitialized {
@@ -572,6 +632,17 @@ impl LiquifactEscrow {
         env.storage()
             .instance()
             .set(&contribution_key, &(prev + amount));
+
+        if prev == 0 {
+            let cur: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::UniqueFunderCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::UniqueFunderCount, &(cur + 1));
+        }
 
         env.storage().instance().set(&DataKey::Escrow, &escrow);
 
