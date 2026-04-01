@@ -1,7 +1,8 @@
-use super::{LiquifactEscrow, LiquifactEscrowClient};
-use soroban_sdk::{
-    contract, contractimpl, symbol_short, testutils::Address as _, Address, Env, String,
-};
+use super::*;
+use soroban_sdk::{contract, contractimpl};
+
+// External-call and token-integration assumptions that should stay separate
+// from escrow state-machine assertions.
 
 #[contract]
 pub struct MockToken;
@@ -19,19 +20,6 @@ impl MockToken {
     pub fn decimals(_env: Env) -> i32 {
         6
     }
-}
-
-fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
-    let id = env.register(LiquifactEscrow, ());
-    LiquifactEscrowClient::new(env, &id)
-}
-
-fn setup(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
-    env.mock_all_auths();
-    let client = deploy(env);
-    let admin = Address::generate(env);
-    let sme = Address::generate(env);
-    (client, admin, sme)
 }
 
 #[test]
@@ -65,7 +53,7 @@ fn test_collateral_record_is_metadata_only_and_does_not_invoke_token_contract() 
 
 #[test]
 fn test_token_integration_assumptions_are_documented_in_readme() {
-    let contents = include_str!("../../docs/ESCROW_TOKEN_INTEGRATION_CHECKLIST.md");
+    let contents = include_str!("../../../docs/ESCROW_TOKEN_INTEGRATION_CHECKLIST.md");
     assert!(
         contents.contains("fee-on-transfer"),
         "Expected unsupported token warning to be documented"
@@ -73,5 +61,38 @@ fn test_token_integration_assumptions_are_documented_in_readme() {
     assert!(
         contents.contains("smallest units"),
         "Expected smallest-unit assumption to be documented"
+    );
+}
+
+#[test]
+fn test_external_transfer_wrapper_balance_deltas() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
+    let token = sac.address();
+    let holder = env.register(LiquifactEscrow, ());
+    let treasury = Address::generate(&env);
+    let stellar = StellarAssetClient::new(&env, &token);
+    stellar.mint(&holder, &777i128);
+    external_calls::transfer_funding_token_with_balance_checks(
+        &env, &token, &holder, &treasury, 777i128,
+    );
+    assert_eq!(stellar.balance(&holder), 0);
+    assert_eq!(stellar.balance(&treasury), 777i128);
+}
+
+#[test]
+#[should_panic(expected = "insufficient token balance before transfer")]
+fn test_external_wrapper_panics_when_undercollateralized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
+    let token = sac.address();
+    let holder = env.register(LiquifactEscrow, ());
+    let treasury = Address::generate(&env);
+    let stellar = StellarAssetClient::new(&env, &token);
+    stellar.mint(&holder, &1i128);
+    external_calls::transfer_funding_token_with_balance_checks(
+        &env, &token, &holder, &treasury, 10i128,
     );
 }
