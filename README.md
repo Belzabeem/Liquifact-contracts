@@ -118,6 +118,20 @@ cargo build
 cargo test
 ```
 
+## Test organization
+
+Escrow tests are organized by feature area under [`escrow/src/test/`](escrow/src/test):
+
+- `init.rs` covers initialization, invoice-id validation, getters, and init-shaped baselines
+- `funding.rs` covers funding, contribution accounting, snapshots, and tier selection
+- `settlement.rs` covers settlement, withdrawal, investor claims, maturity boundaries, and dust sweep
+- `admin.rs` covers admin-governed state changes, legal hold, migration guards, and collateral metadata
+- `integration.rs` covers external token-wrapper assumptions and metadata-only integration checks
+- `properties.rs` contains proptest-based invariants
+
+Shared helpers remain in [`escrow/src/test.rs`](escrow/src/test.rs). Each test creates its own fresh
+`Env` and local setup so feature modules do not rely on hidden cross-test state.
+
 ---
 
 ## Architecture Decision Records
